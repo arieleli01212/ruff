@@ -2,6 +2,7 @@ use std::borrow::Cow;
 use std::ops::Range;
 
 mod google;
+mod numpy;
 mod rst;
 
 use super::super::formats::{Formats, SectionKind};
@@ -660,6 +661,7 @@ impl SectionItem {
 fn parse_blocks<'a>(raw: &'a str, formats: &Formats<'_>) -> Vec<Block<'a>> {
     let mut sections = rst::section_candidates(formats.rst());
     sections.extend(google::section_candidates(formats.google()));
+    sections.extend(numpy::section_candidates(formats.numpy()));
     sections.sort_by_key(|section| section.range.start);
     let mut blocks = Vec::new();
     let mut rendered_through = 0;
@@ -1150,6 +1152,146 @@ Args:
 Args:
     nested = 1
         ```
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_eq!(parsed.render_markdown_source(), docstring);
+    }
+
+    #[test]
+    fn numpy_sections_render_markdown_sections() {
+        let docstring = "\
+Summary.
+
+Parameters
+----------
+value, alias : str
+    The value.
+other
+    Another value.
+
+Other Parameters
+----------------
+kw_only : str, optional
+    Less common option.
+
+Returns
+-------
+    result : bool
+        Whether validation passed.
+
+Yields
+------
+    int
+        Next value.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        Summary.
+
+        ## Parameters
+        `value, alias` (`str`): The value.
+        `other`: Another value.
+
+        ## Other Parameters
+        `kw_only` (`str, optional`): Less common option.
+
+        ## Returns
+        `result` (`bool`): Whether validation passed.
+
+        ## Yields
+        `int`: Next value.
+        ");
+
+        let docstring = "\
+Summary.
+
+Parameters
+----------
+value: str
+    The value.
+
+Returns
+-------
+result: bool
+    Whether validation passed.
+
+Yields
+------
+item: int
+    Next value.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        Summary.
+
+        ## Parameters
+        `value` (`str`): The value.
+
+        ## Returns
+        `result` (`bool`): Whether validation passed.
+
+        ## Yields
+        `item` (`int`): Next value.
+        ");
+
+        let docstring = "\
+Summary.
+
+Returns
+-------
+    :obj:`list` of :obj:`str`
+        Primary values.
+    list of node-like
+        Related nodes.
+
+Yields
+------
+    :class:`Iterator` of :obj:`str`
+        Next labels.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        Summary.
+
+        ## Returns
+        `` :obj:`list` of :obj:`str` ``: Primary values.
+        `list of node-like`: Related nodes.
+
+        ## Yields
+        `` :class:`Iterator` of :obj:`str` ``: Next labels.
+        ");
+    }
+
+    #[test]
+    fn unsupported_numpy_sections_stay_raw() {
+        let docstring = "\
+Summary.
+
+Returns
+-------
+    The created object.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_eq!(parsed.render_markdown_source(), docstring);
+    }
+
+    #[test]
+    fn indented_sections_stay_raw() {
+        let docstring = "\
+Summary.
+
+    Args:
+        value: The value.
+
+    Parameters
+    ----------
+    other : str
+        Another value.
 ";
         let parsed = parse_docstring(docstring);
 

@@ -6,6 +6,7 @@ use ruff_python_stdlib::identifiers::is_identifier;
 use super::SectionKind;
 use crate::docstring::parsing::{
     ParsedLine, indentation, is_docstring_type_expression, parsed_lines,
+    split_once_unbracketed_colon,
 };
 use crate::docstring::preformatted::PreformattedBlockScanner;
 
@@ -19,7 +20,6 @@ impl<'a> Docstring<'a> {
         Self { sections }
     }
 
-    #[expect(dead_code, reason = "used by follow-up structured docstring renderer")]
     pub(in crate::docstring) fn sections(&self) -> &[Section<'a>] {
         &self.sections
     }
@@ -37,22 +37,18 @@ pub(in crate::docstring) struct Section<'a> {
 }
 
 impl<'a> Section<'a> {
-    #[expect(dead_code, reason = "used by follow-up structured docstring renderer")]
     pub(in crate::docstring) fn kind(&self) -> SectionKind {
         self.kind
     }
 
-    #[expect(dead_code, reason = "used by follow-up structured docstring renderer")]
     pub(in crate::docstring) fn indent(&self) -> usize {
         self.indent
     }
 
-    #[expect(dead_code, reason = "used by follow-up structured docstring renderer")]
     pub(in crate::docstring) fn range(&self) -> Range<usize> {
         self.range.clone()
     }
 
-    #[expect(dead_code, reason = "used by follow-up structured docstring renderer")]
     pub(in crate::docstring) fn body(&self) -> &[ParsedLine<'a>] {
         &self.body
     }
@@ -271,7 +267,7 @@ fn parse_numpy_named_return_item(line: &str) -> Option<(&str, &str)> {
     split_numpy_type_separator(line)
 }
 
-fn is_numpy_anonymous_return_type(line: &str) -> bool {
+pub(in crate::docstring) fn is_numpy_anonymous_return_type(line: &str) -> bool {
     !line.is_empty()
         && !line.ends_with('.')
         && !line.ends_with(':')
@@ -396,8 +392,8 @@ fn insert_parameter_group(
     }
 }
 
-fn split_numpy_type_separator(line: &str) -> Option<(&str, &str)> {
-    let (name, ty) = line.split_once(':')?;
+pub(in crate::docstring) fn split_numpy_type_separator(line: &str) -> Option<(&str, &str)> {
+    let (name, ty) = split_once_unbracketed_colon(line)?;
     if !name.chars().last().is_some_and(char::is_whitespace)
         && !ty.chars().next().is_some_and(char::is_whitespace)
     {
@@ -413,7 +409,7 @@ fn split_numpy_type_separator(line: &str) -> Option<(&str, &str)> {
     Some((name, ty))
 }
 
-fn is_numpy_item_name(name: &str) -> bool {
+pub(in crate::docstring) fn is_numpy_item_name(name: &str) -> bool {
     name.split(',').all(|part| {
         let part = part.trim();
         let part = part
