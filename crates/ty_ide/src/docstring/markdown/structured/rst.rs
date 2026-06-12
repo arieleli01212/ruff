@@ -1,8 +1,8 @@
 use ruff_text_size::TextSize;
 use rustc_hash::FxHashMap;
 
-use super::{DocstringSectionKind, SectionBlock, SectionCandidate, SectionItem};
-use crate::docstring::formats::rst;
+use super::{SectionBlock, SectionCandidate, SectionItem};
+use crate::docstring::formats::{SectionKind, rst};
 
 pub(super) fn section_candidates(docstring: &rst::Docstring) -> Vec<SectionCandidate> {
     let mut sections = Vec::new();
@@ -119,7 +119,7 @@ impl<'a> RenderPlan<'a> {
                     ty,
                     description,
                 } => items.push(SectionItem::new(
-                    DocstringSectionKind::Parameters,
+                    SectionKind::Parameters,
                     Some(display_name.as_str()),
                     ty.as_deref()
                         .or_else(|| self.parameter_types.get_non_empty(lookup_name.as_str())),
@@ -130,14 +130,14 @@ impl<'a> RenderPlan<'a> {
                     ty,
                     description,
                 } => items.push(SectionItem::new(
-                    DocstringSectionKind::Attributes,
+                    SectionKind::Attributes,
                     Some(name.as_str()),
                     ty.as_deref()
                         .or_else(|| self.attribute_types.get_non_empty(name.as_str())),
                     description,
                 )),
                 rst::Field::Returns { name, description } => items.push(SectionItem::new(
-                    DocstringSectionKind::Returns,
+                    SectionKind::Returns,
                     name.as_deref(),
                     self.return_type.filter(|ty| !ty.is_empty()),
                     description,
@@ -146,7 +146,7 @@ impl<'a> RenderPlan<'a> {
                     exception,
                     description,
                 } => items.push(SectionItem::new(
-                    DocstringSectionKind::Raises,
+                    SectionKind::Raises,
                     exception.as_deref(),
                     None,
                     description,
@@ -154,7 +154,7 @@ impl<'a> RenderPlan<'a> {
                 rst::Field::ReturnType { .. } if !self.has_returns => {
                     if let Some(return_type) = self.return_type.filter(|ty| !ty.is_empty()) {
                         items.push(SectionItem::new(
-                            DocstringSectionKind::Returns,
+                            SectionKind::Returns,
                             None,
                             Some(return_type),
                             "",

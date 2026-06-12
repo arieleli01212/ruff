@@ -1,24 +1,20 @@
 use std::borrow::Cow;
 use std::ops::Range;
 
+mod google;
 mod rst;
 
-use super::super::formats::Formats;
-#[derive(Debug, Clone, Copy, PartialEq, Eq)]
-pub(super) enum DocstringSectionKind {
-    Parameters,
-    OtherParameters,
-    Attributes,
-    Returns,
-    Raises,
-}
+use super::super::formats::{Formats, SectionKind};
+use super::super::parsing::{ParsedLine, indentation};
 
-const SECTION_ORDER: &[(DocstringSectionKind, &str)] = &[
-    (DocstringSectionKind::Parameters, "Parameters"),
-    (DocstringSectionKind::OtherParameters, "Other Parameters"),
-    (DocstringSectionKind::Attributes, "Attributes"),
-    (DocstringSectionKind::Returns, "Returns"),
-    (DocstringSectionKind::Raises, "Raises"),
+const SECTION_ORDER: &[(SectionKind, &str)] = &[
+    (SectionKind::Parameters, "Parameters"),
+    (SectionKind::KeywordArguments, "Keyword Arguments"),
+    (SectionKind::OtherParameters, "Other Parameters"),
+    (SectionKind::Attributes, "Attributes"),
+    (SectionKind::Returns, "Returns"),
+    (SectionKind::Yields, "Yields"),
+    (SectionKind::Raises, "Raises"),
 ];
 
 fn render_markdown_section<'a>(
@@ -289,37 +285,44 @@ fn render_code_span_into(output: &mut String, text: &str) {
 mod section_tests {
     use insta::{Settings, assert_snapshot};
 
-    use super::{DocstringSectionKind, SectionBlock, SectionItem};
+    use super::{SectionBlock, SectionItem};
+    use crate::docstring::formats::SectionKind;
 
     #[test]
     fn sections_render_in_canonical_order() {
         let section = SectionBlock::new(vec![
             SectionItem::new(
-                DocstringSectionKind::Raises,
+                SectionKind::Raises,
                 Some("ValueError"),
                 None,
                 "Invalid value.",
             ),
             SectionItem::new(
-                DocstringSectionKind::Parameters,
+                SectionKind::Parameters,
                 Some("value"),
                 Some("str"),
                 "The value.",
             ),
             SectionItem::new(
-                DocstringSectionKind::OtherParameters,
+                SectionKind::KeywordArguments,
+                Some("limit"),
+                Some("int"),
+                "Maximum result count.",
+            ),
+            SectionItem::new(
+                SectionKind::OtherParameters,
                 Some("kw_only"),
                 Some("str"),
                 "Less common option.",
             ),
             SectionItem::new(
-                DocstringSectionKind::Returns,
+                SectionKind::Returns,
                 None,
                 Some("bool"),
                 "Whether validation passed.",
             ),
             SectionItem::new(
-                DocstringSectionKind::Attributes,
+                SectionKind::Attributes,
                 Some("cache"),
                 Some("dict[str,\n object]"),
                 "Cached data.",
@@ -329,6 +332,9 @@ mod section_tests {
         assert_snapshot!(section.render_markdown(), @"
         ## Parameters
         `value` (`str`): The value.
+
+        ## Keyword Arguments
+        `limit` (`int`): Maximum result count.
 
         ## Other Parameters
         `kw_only` (`str`): Less common option.
@@ -347,8 +353,8 @@ mod section_tests {
     #[test]
     fn sections_skip_empty_items() {
         let section = SectionBlock::new(vec![
-            SectionItem::new(DocstringSectionKind::Parameters, None, None, ""),
-            SectionItem::new(DocstringSectionKind::Returns, None, Some(""), ""),
+            SectionItem::new(SectionKind::Parameters, None, None, ""),
+            SectionItem::new(SectionKind::Returns, None, Some(""), ""),
         ]);
 
         assert_eq!(section.render_markdown(), "");
@@ -362,61 +368,61 @@ mod section_tests {
 
         let section = SectionBlock::new(vec![
             SectionItem::new(
-                DocstringSectionKind::Parameters,
+                SectionKind::Parameters,
                 Some("`value`"),
                 None,
                 "First sentence.\nContinued sentence.\n\nSecond paragraph.",
             ),
             SectionItem::new(
-                DocstringSectionKind::Parameters,
+                SectionKind::Parameters,
                 Some("mode"),
                 None,
                 "Allowed values:\n- fast\n- slow",
             ),
             SectionItem::new(
-                DocstringSectionKind::Parameters,
+                SectionKind::Parameters,
                 Some("example"),
                 None,
                 "Example:\n```python\nif ok:\n    do_work()\n```",
             ),
             SectionItem::new(
-                DocstringSectionKind::Parameters,
+                SectionKind::Parameters,
                 Some("prompt"),
                 None,
                 "Example:\n>>> print('prompt')",
             ),
             SectionItem::new(
-                DocstringSectionKind::Parameters,
+                SectionKind::Parameters,
                 Some("choices"),
                 None,
                 "- first\n- second",
             ),
             SectionItem::new(
-                DocstringSectionKind::Parameters,
+                SectionKind::Parameters,
                 Some("steps"),
                 None,
                 "1. first\n2. second",
             ),
             SectionItem::new(
-                DocstringSectionKind::Parameters,
+                SectionKind::Parameters,
                 Some("unterminated"),
                 None,
                 "```python\nprint('open')",
             ),
             SectionItem::new(
-                DocstringSectionKind::Parameters,
+                SectionKind::Parameters,
                 Some("other"),
                 None,
                 "Another parameter.",
             ),
             SectionItem::new(
-                DocstringSectionKind::Returns,
+                SectionKind::Returns,
                 None,
                 Some("str"),
                 "```python\nprint('result')",
             ),
             SectionItem::new(
-                DocstringSectionKind::Raises,
+                SectionKind::Raises,
                 Some("ValueError"),
                 None,
                 "Invalid value.",
@@ -471,7 +477,7 @@ mod section_tests {
     }
 }
 
-pub(super) fn render<'a>(raw: &'a str, formats: &Formats) -> Cow<'a, str> {
+pub(super) fn render<'a>(raw: &'a str, formats: &Formats<'_>) -> Cow<'a, str> {
     Docstring::parse(raw, formats).render_markdown_source()
 }
 
@@ -482,7 +488,7 @@ pub(super) struct Docstring<'a> {
 }
 
 impl<'a> Docstring<'a> {
-    pub(super) fn parse(raw: &'a str, formats: &Formats) -> Self {
+    pub(super) fn parse(raw: &'a str, formats: &Formats<'_>) -> Self {
         let blocks = parse_blocks(raw, formats);
 
         Self { raw, blocks }
@@ -542,8 +548,8 @@ impl SectionBlock {
 
     fn render_markdown(&self) -> String {
         let mut output = String::new();
-        for (kind, heading) in SECTION_ORDER {
-            self.render_section(&mut output, heading, *kind);
+        for &(kind, heading) in SECTION_ORDER {
+            self.render_section(&mut output, heading, kind);
         }
         output
     }
@@ -558,7 +564,7 @@ impl SectionBlock {
         }
     }
 
-    fn render_section(&self, output: &mut String, heading: &str, kind: DocstringSectionKind) {
+    fn render_section(&self, output: &mut String, heading: &str, kind: SectionKind) {
         render_markdown_section(
             output,
             heading,
@@ -579,7 +585,7 @@ impl SectionBlock {
 
 #[derive(Debug, Clone, PartialEq, Eq)]
 pub(super) struct SectionItem {
-    kind: DocstringSectionKind,
+    kind: SectionKind,
     display_name: Option<String>,
     ty: Option<String>,
     description: String,
@@ -587,7 +593,7 @@ pub(super) struct SectionItem {
 
 impl SectionItem {
     pub(super) fn new(
-        kind: DocstringSectionKind,
+        kind: SectionKind,
         display_name: Option<&str>,
         ty: Option<&str>,
         description: &str,
@@ -651,8 +657,9 @@ impl SectionItem {
     }
 }
 
-fn parse_blocks<'a>(raw: &'a str, formats: &Formats) -> Vec<Block<'a>> {
+fn parse_blocks<'a>(raw: &'a str, formats: &Formats<'_>) -> Vec<Block<'a>> {
     let mut sections = rst::section_candidates(formats.rst());
+    sections.extend(google::section_candidates(formats.google()));
     sections.sort_by_key(|section| section.range.start);
     let mut blocks = Vec::new();
     let mut rendered_through = 0;
@@ -697,12 +704,169 @@ pub(super) struct SectionCandidate {
     block: SectionBlock,
 }
 
+pub(super) struct SectionItemBuilder {
+    display_name: Option<String>,
+    ty: Option<String>,
+    description_lines: Vec<DescriptionLine>,
+}
+
+impl SectionItemBuilder {
+    pub(super) fn finish(self, kind: SectionKind) -> SectionItem {
+        let description = normalize_description(self.description_lines);
+        SectionItem::new(
+            kind,
+            self.display_name.as_deref(),
+            self.ty.as_deref(),
+            &description,
+        )
+    }
+
+    pub(super) fn push_description(&mut self, line: &str) {
+        self.description_lines
+            .push(DescriptionLine::Source(line.to_string()));
+    }
+}
+
+#[derive(Debug, Clone, PartialEq, Eq)]
+pub(super) enum DescriptionLine {
+    Normalized(String),
+    Source(String),
+}
+
+impl DescriptionLine {
+    pub(super) fn normalized(line: &str) -> Self {
+        Self::Normalized(line.trim().to_string())
+    }
+}
+
+pub(super) fn parse_named_items(
+    kind: SectionKind,
+    body: &[ParsedLine<'_>],
+    mut parse_item: impl FnMut(&str) -> Option<SectionItemBuilder>,
+) -> Option<Vec<SectionItem>> {
+    let mut items = Vec::new();
+    let mut current: Option<SectionItemBuilder> = None;
+    let mut item_indent = None;
+
+    for line in body {
+        let trimmed = line.text.trim();
+        if trimmed.is_empty() {
+            if let Some(current) = &mut current {
+                current.push_description("");
+            }
+            continue;
+        }
+
+        let line_indent = indentation(line.text);
+        if item_indent.is_none_or(|indent| line_indent == indent) {
+            if let Some(item) = parse_item(trimmed) {
+                if let Some(current) = current.replace(item) {
+                    items.push(current.finish(kind));
+                }
+                item_indent.get_or_insert(line_indent);
+                continue;
+            }
+            if item_indent.is_some() {
+                return None;
+            }
+        }
+        if item_indent.is_some_and(|indent| line_indent < indent) {
+            return None;
+        }
+
+        let current = current.as_mut()?;
+        current.push_description(line.text);
+    }
+
+    if let Some(current) = current {
+        items.push(current.finish(kind));
+    }
+    (!items.is_empty()).then_some(items)
+}
+
+pub(super) fn is_uri_scheme_prefix(ty: &str, description: &str) -> bool {
+    if !is_uri_scheme(ty) {
+        return false;
+    }
+
+    if description.starts_with("//") {
+        return true;
+    }
+
+    let Some(first) = description.chars().next() else {
+        return false;
+    };
+    if first.is_whitespace() {
+        return false;
+    }
+
+    matches!(first, '/' | '?' | '#' | '@' | ':')
+        || description
+            .chars()
+            .skip(1)
+            .any(|char| matches!(char, '/' | '?' | '#' | '@' | ':'))
+}
+
+pub(super) fn is_uri_scheme(scheme: &str) -> bool {
+    let mut chars = scheme.chars();
+    chars.next().is_some_and(|char| char.is_ascii_alphabetic())
+        && chars.all(|char| char.is_ascii_alphanumeric() || matches!(char, '+' | '-' | '.'))
+}
+
+pub(super) fn normalize_description(lines: Vec<DescriptionLine>) -> String {
+    let dedent = lines
+        .iter()
+        .filter_map(|line| match line {
+            DescriptionLine::Source(line) if !line.trim().is_empty() => Some(indentation(line)),
+            DescriptionLine::Normalized(_) | DescriptionLine::Source(_) => None,
+        })
+        .min()
+        .unwrap_or(0);
+
+    let mut description = lines
+        .into_iter()
+        .map(|line| match line {
+            DescriptionLine::Normalized(line) => line,
+            DescriptionLine::Source(line) => {
+                strip_indentation(&line, dedent).trim_end().to_string()
+            }
+        })
+        .skip_while(String::is_empty)
+        .collect::<Vec<_>>();
+    while description.last().is_some_and(String::is_empty) {
+        description.pop();
+    }
+    description.join("\n")
+}
+
+pub(super) fn strip_indentation(line: &str, width: usize) -> &str {
+    let mut indentation_width = 0;
+    for (index, char) in line.char_indices() {
+        let char_width = match char {
+            ' ' => 1,
+            '\t' => 8,
+            _ => return &line[index..],
+        };
+
+        if indentation_width + char_width > width {
+            return &line[index..];
+        }
+
+        indentation_width += char_width;
+        if indentation_width == width {
+            return &line[index + char.len_utf8()..];
+        }
+    }
+
+    ""
+}
+
 #[cfg(test)]
 mod tests {
     use insta::assert_snapshot;
 
-    use super::{Block, Docstring, DocstringSectionKind, SectionBlock, SectionItem};
-    use crate::docstring::formats::Formats;
+    use super::{Block, Docstring, SectionBlock, SectionItem};
+    use crate::docstring::formats::{Formats, SectionKind};
 
     #[test]
     fn raw_docstring_renders_borrowed() {
@@ -721,6 +885,278 @@ mod tests {
     }
 
     #[test]
+    fn google_sections_render_markdown_sections() {
+        let docstring = "\
+Summary.
+
+Args:
+    value (str): The value.
+        More detail.
+    *items: Extra items.
+
+Keyword Args:
+    optional (int): Optional value.
+
+Returns:
+    bool: Whether validation passed.
+
+Yields:
+    int: Next value.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        Summary.
+
+        ## Parameters
+        `value` (`str`): The value.
+            More detail.
+        `*items`: Extra items.
+
+        ## Keyword Arguments
+        `optional` (`int`): Optional value.
+
+        ## Returns
+        `bool`: Whether validation passed.
+
+        ## Yields
+        `int`: Next value.
+        ");
+
+        let docstring = "\
+Args:
+    x, y: Coordinates.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        ## Parameters
+        `x, y`: Coordinates.
+        ");
+
+        let docstring = "\
+Keyword Arguments:
+    retries: Retry count.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        ## Keyword Arguments
+        `retries`: Retry count.
+        ");
+
+        let docstring = "\
+Args:
+    value: The value.
+Additional details.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        ## Parameters
+        `value`: The value.
+        Additional details.
+        ");
+
+        let docstring = "\
+Args:
+    value: The value.
+Methods:
+    work: Does work.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        ## Parameters
+        `value`: The value.
+        Methods:
+            work: Does work.
+        ");
+
+        let docstring = "\
+Returns:
+    bool: Whether validation passed.
+Additional details.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        ## Returns
+        `bool`: Whether validation passed.
+        Additional details.
+        ");
+
+        let docstring = "\
+Returns:
+    str or None: Optional value.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        ## Returns
+        `str or None`: Optional value.
+        ");
+
+        let docstring = "\
+Yields:
+    :obj:`list` of :obj:`str`: Result chunks.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        ## Yields
+        `` :obj:`list` of :obj:`str` ``: Result chunks.
+        ");
+
+        let docstring = "\
+Returns:
+    str: Example output.
+        ```python
+        Args:
+            value: still code.
+        Returns:
+            still code.
+        ```
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        ## Returns
+        `str`: Example output.
+
+        ```python
+        Args:
+            value: still code.
+        Returns:
+            still code.
+        ```
+        ");
+
+        let docstring = "\
+Yields:
+    int: Example output.
+        Example::
+            Args:
+                still code.
+            Yields:
+                still code.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        ## Yields
+        `int`: Example output.
+            Example::
+                Args:
+                    still code.
+                Yields:
+                    still code.
+        ");
+    }
+
+    #[test]
+    fn unsupported_google_sections_stay_raw() {
+        let docstring = "\
+Summary.
+
+Args:
+    Inputs are normalized first.
+    value: The value.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_eq!(parsed.render_markdown_source(), docstring);
+
+        let docstring = "\
+Summary.
+
+Examples:
+    Args:
+        value: demo input.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_eq!(parsed.render_markdown_source(), docstring);
+
+        let docstring = "\
+Summary.
+
+Returns:
+    bool: Whether validation passed.
+
+    Examples:
+        Use it.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_eq!(parsed.render_markdown_source(), docstring);
+
+        let docstring = "\
+Summary.
+
+Yields:
+    int: Next value.
+
+    Examples:
+        Use it.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_eq!(parsed.render_markdown_source(), docstring);
+
+        let docstring = "\
+Summary.
+
+Args:
+    Inputs are normalized first.
+    Args:
+        value: demo input.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_eq!(parsed.render_markdown_source(), docstring);
+
+        let docstring = "\
+Summary.
+
+Args:
+    value: The value.
+
+    Examples:
+        Use it.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_eq!(parsed.render_markdown_source(), docstring);
+
+        let docstring = "\
+Summary.
+
+Returns:
+    Examples:
+        Use it.
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_eq!(parsed.render_markdown_source(), docstring);
+
+        let docstring = "\
+Summary.
+
+Args:
+    value: Example.
+        ```python
+
+Args:
+    nested = 1
+        ```
+";
+        let parsed = parse_docstring(docstring);
+
+        assert_eq!(parsed.render_markdown_source(), docstring);
+    }
+
+    #[test]
     fn section_blocks_render_markdown_source() {
         let parsed = Docstring {
             raw: "Summary.\n\n:param str value: The value.",
@@ -728,13 +1164,13 @@ mod tests {
                 Block::Raw("Summary.\n\n"),
                 Block::Section(SectionBlock::new(vec![
                     SectionItem::new(
-                        DocstringSectionKind::Parameters,
+                        SectionKind::Parameters,
                         Some("value"),
                         Some("str"),
                         "The value.",
                     ),
                     SectionItem::new(
-                        DocstringSectionKind::Returns,
+                        SectionKind::Returns,
                         None,
                         Some("bool"),
                         "Whether validation passed.",
@@ -760,7 +1196,7 @@ mod tests {
             raw: ":param value: The value.\nAfter.",
             blocks: vec![
                 Block::Section(SectionBlock::new(vec![SectionItem::new(
-                    DocstringSectionKind::Parameters,
+                    SectionKind::Parameters,
                     Some("value"),
                     None,
                     "The value.",
@@ -779,7 +1215,7 @@ mod tests {
             raw: ":param value: The value.\n\nAfter.",
             blocks: vec![
                 Block::Section(SectionBlock::new(vec![SectionItem::new(
-                    DocstringSectionKind::Parameters,
+                    SectionKind::Parameters,
                     Some("value"),
                     None,
                     "The value.",
@@ -799,7 +1235,7 @@ mod tests {
             raw: ":param value:\n    - First option.\nAfter.",
             blocks: vec![
                 Block::Section(SectionBlock::new(vec![SectionItem::new(
-                    DocstringSectionKind::Parameters,
+                    SectionKind::Parameters,
                     Some("value"),
                     None,
                     "- First option.",
@@ -820,7 +1256,7 @@ mod tests {
             raw: ":param value:\n    - First option.\nAfter.",
             blocks: vec![
                 Block::Section(SectionBlock::new(vec![SectionItem::new(
-                    DocstringSectionKind::Parameters,
+                    SectionKind::Parameters,
                     Some("value"),
                     None,
                     "- First option.",
@@ -841,7 +1277,7 @@ mod tests {
             raw: ":param value:\n    ```python\n    value = 1\nAfter.",
             blocks: vec![
                 Block::Section(SectionBlock::new(vec![SectionItem::new(
-                    DocstringSectionKind::Parameters,
+                    SectionKind::Parameters,
                     Some("value"),
                     None,
                     "```python\nvalue = 1",
@@ -859,5 +1295,31 @@ mod tests {
 
         After.
         ");
+
+        let parsed = Docstring {
+            raw: "Yields:\n    int:\n        - Next value.\nAfter.",
+            blocks: vec![
+                Block::Section(SectionBlock::new(vec![SectionItem::new(
+                    SectionKind::Yields,
+                    None,
+                    Some("int"),
+                    "- Next value.",
+                )])),
+                Block::Raw("After."),
+            ],
+        };
+
+        assert_snapshot!(parsed.render_markdown_source(), @"
+        ## Yields
+        `int`:
+        - Next value.
+
+        After.
+        ");
+    }
+
+    fn parse_docstring(raw: &str) -> Docstring<'_> {
+        let formats = Formats::parse(raw);
+        Docstring::parse(raw, &formats)
     }
 }

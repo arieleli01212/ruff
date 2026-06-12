@@ -93,3 +93,32 @@ pub(in crate::docstring) fn parse_parenthesized_type(name: &str) -> (&str, Optio
 
     (name, None)
 }
+
+pub(in crate::docstring) fn is_docstring_type_expression(ty: &str) -> bool {
+    if ty.is_empty() || !ty.chars().all(is_docstring_type_expression_char) {
+        return false;
+    }
+
+    if !ty.chars().any(char::is_whitespace) {
+        return true;
+    }
+
+    ty.contains('[')
+        || ty.contains(',')
+        || ty.contains('|')
+        || ty.contains('`')
+        || contains_type_word(ty, "of")
+        || contains_type_word(ty, "or")
+        || contains_type_word(ty, "optional")
+}
+
+fn contains_type_word(ty: &str, word: &str) -> bool {
+    ty.split_whitespace().any(|part| {
+        part.trim_matches(|char: char| !char.is_ascii_alphanumeric())
+            .eq_ignore_ascii_case(word)
+    })
+}
+
+fn is_docstring_type_expression_char(ch: char) -> bool {
+    ch.is_ascii_alphanumeric() || "_.[](){},|\"':/ `~-".contains(ch)
+}
