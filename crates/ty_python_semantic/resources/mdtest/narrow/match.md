@@ -1420,7 +1420,7 @@ pattern does not bind a name for the whole value. Nested patterns can remove uni
 variable can match, the narrowed subject keeps the original type variable in an intersection.
 
 ```py
-from typing import Any, Generic, Literal, TypeVar, final
+from typing import Any, Generic, Literal, Protocol, TypeVar, final, runtime_checkable
 from typing_extensions import TypedDict
 from ty_extensions import Unknown
 
@@ -1506,6 +1506,24 @@ def test_match_class_or_pattern_preserves_constrained_typevar_subject(value: Sub
         case SubjectChoiceA() | SubjectChoiceB():
             # revealed: SubjectChoiceT@test_match_class_or_pattern_preserves_constrained_typevar_subject
             reveal_type(value)
+
+class IntersectChoiceA: ...
+class IntersectChoiceB: ...
+
+IntersectChoiceT = TypeVar("IntersectChoiceT", IntersectChoiceA, IntersectChoiceB)
+
+@runtime_checkable
+class SubjectMarker(Protocol):
+    marker: int
+
+def test_match_or_pattern_preserves_intersected_typevar(value: IntersectChoiceT) -> None:
+    if isinstance(value, SubjectMarker):
+        # revealed: IntersectChoiceT@test_match_or_pattern_preserves_intersected_typevar & SubjectMarker
+        reveal_type(value)
+        match value:
+            case IntersectChoiceA() | IntersectChoiceB():
+                # revealed: IntersectChoiceT@test_match_or_pattern_preserves_intersected_typevar & SubjectMarker
+                reveal_type(value)
 
 def test_match_sequence_narrows_tuple_element_subject(
     value: tuple[Literal[1, 2]],
