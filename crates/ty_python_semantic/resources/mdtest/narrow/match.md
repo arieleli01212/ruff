@@ -493,6 +493,19 @@ BoundChoiceT = TypeVar("BoundChoiceT", BoundA, BoundB)
 
 BoundedChoiceT = TypeVar("BoundedChoiceT", bound=BoundA | BoundB)
 
+IndependentChoice0T = TypeVar("IndependentChoice0T", BoundA, BoundB)
+IndependentChoice1T = TypeVar("IndependentChoice1T", BoundA, BoundB)
+IndependentChoice2T = TypeVar("IndependentChoice2T", BoundA, BoundB)
+IndependentChoice3T = TypeVar("IndependentChoice3T", BoundA, BoundB)
+IndependentChoice4T = TypeVar("IndependentChoice4T", BoundA, BoundB)
+IndependentChoice5T = TypeVar("IndependentChoice5T", BoundA, BoundB)
+IndependentChoice6T = TypeVar("IndependentChoice6T", BoundA, BoundB)
+IndependentChoice7T = TypeVar("IndependentChoice7T", BoundA, BoundB)
+IndependentChoice8T = TypeVar("IndependentChoice8T", BoundA, BoundB)
+IndependentChoice9T = TypeVar("IndependentChoice9T", BoundA, BoundB)
+IndependentChoice10T = TypeVar("IndependentChoice10T", BoundA, BoundB)
+IndependentChoice11T = TypeVar("IndependentChoice11T", BoundA, BoundB)
+
 BoundSequenceT = TypeVar("BoundSequenceT", bound=tuple[object])
 ConstrainedSequenceT = TypeVar(
     "ConstrainedSequenceT",
@@ -628,6 +641,16 @@ def test_repeated_constrained_typevar_refines_sibling_capture(
         case _:
             raise ValueError
 
+def test_nested_repeated_constrained_typevar_uses_one_constraint(
+    value: tuple[list[BoundChoiceT], list[BoundChoiceT]],
+) -> BoundB:
+    match value:
+        case [[BoundA() as item], [BoundB()]]:
+            # This branch is impossible even though the repeated type variable is nested.
+            return item
+        case _:
+            raise ValueError
+
 def test_repeated_bounded_typevar_can_match_different_union_members(
     value: tuple[BoundedChoiceT, BoundedChoiceT],
 ) -> BoundA:
@@ -636,6 +659,26 @@ def test_repeated_bounded_typevar_can_match_different_union_members(
             return item
         case _:
             raise ValueError
+
+def test_large_independent_constrained_typevar_product_falls_back(
+    value: tuple[
+        IndependentChoice0T,
+        IndependentChoice1T,
+        IndependentChoice2T,
+        IndependentChoice3T,
+        IndependentChoice4T,
+        IndependentChoice5T,
+        IndependentChoice6T,
+        IndependentChoice7T,
+        IndependentChoice8T,
+        IndependentChoice9T,
+        IndependentChoice10T,
+        IndependentChoice11T,
+    ],
+) -> int:
+    match value:
+        case [*items]:
+            return len(items)
 ```
 
 ## Indirect class patterns

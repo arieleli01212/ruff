@@ -455,6 +455,13 @@ struct PatternSuccessAnalyzer<'db> {
     scope: ScopeId<'db>,
 }
 
+/// The maximum number of subject types produced while preserving correlations between constrained
+/// type variables.
+///
+/// Beyond this limit, pattern analysis keeps the conservative result computed from the original
+/// subject type. This matches the limit used when expanding fixed-length tuple alternatives.
+const MAX_CONSTRAINED_TYPEVAR_EXPANSIONS: usize = 64;
+
 /// Infer the types of all names bound when `pattern` succeeds.
 ///
 /// The subject starts with its inferred type after removing values definitely matched by earlier
@@ -1865,6 +1872,10 @@ impl<'db> PatternSuccessAnalyzer<'db> {
     /// `tuple[T, T]` for `T = TypeVar("T", A, B)` expands to `tuple[A, A] | tuple[B, B]`, not the
     /// Cartesian product of independently expanding each tuple element. A bounded type variable is
     /// deliberately not substituted here because it can specialize to its union bound itself.
+    ///
+    /// Return `None` if there are no constrained type variables or if expanding all of them would
+    /// exceed [`MAX_CONSTRAINED_TYPEVAR_EXPANSIONS`]. In either case, the caller keeps the
+    /// conservative result computed from the original subject type.
     fn expand_constrained_typevars(
         &self,
         subject_ty: Type<'db>,
@@ -1909,12 +1920,20 @@ impl<'db> PatternSuccessAnalyzer<'db> {
             return None;
         }
 
-        let mut expanded: SmallVec<[Type<'db>; 2]> = smallvec![subject_ty];
+        let expansion_count = typevars.iter().try_fold(1usize, |count, typevar| {
+            count.checked_mul(typevar.typevar(self.db).constraints(self.db)?.len())
+        })?;
+        if expansion_count > MAX_CONSTRAINED_TYPEVAR_EXPANSIONS {
+            return None;
+        }
+
+        let mut expanded: SmallVec<[Type<'db>; 2]> = SmallVec::with_capacity(expansion_count);
+        expanded.push(subject_ty);
         for typevar in typevars {
             let Some(constraints) = typevar.typevar(self.db).constraints(self.db) else {
                 continue;
             };
-            let mut next = SmallVec::new();
+            let mut next: SmallVec<[Type<'db>; 2]> = SmallVec::with_capacity(expansion_count);
             for subject_ty in expanded {
                 next.extend(constraints.iter().map(|constraint| {
                     subject_ty.substitute_one_typevar(self.db, typevar, *constraint)
