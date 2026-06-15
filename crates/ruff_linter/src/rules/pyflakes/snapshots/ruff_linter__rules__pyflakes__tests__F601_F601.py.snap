@@ -395,3 +395,47 @@ F601 Dictionary key literal `False` repeated (`False` hashes to the same value a
 70 | }
    |
 help: Remove repeated key literal `False`
+
+F601 Dictionary key literal `-0` repeated (`-0` hashes to the same value as `False`)
+  --> F601.py:75:16
+   |
+74 | # Regression test for: https://github.com/astral-sh/ruff/pull/25982#pullrequestreview-4495269928
+75 | x = {False: 1, -0: 2}
+   |                ^^
+76 | x = {-0: 1, False: 2}
+77 | x = {True: 1, 1 + 0j: 2}
+   |
+help: Remove repeated key literal `-0`
+
+F601 Dictionary key literal `False` repeated (`False` hashes to the same value as `-0`)
+  --> F601.py:76:13
+   |
+74 | # Regression test for: https://github.com/astral-sh/ruff/pull/25982#pullrequestreview-4495269928
+75 | x = {False: 1, -0: 2}
+76 | x = {-0: 1, False: 2}
+   |             ^^^^^
+77 | x = {True: 1, 1 + 0j: 2}
+78 | x = {1 + 0j: 1, True: 2}
+   |
+help: Remove repeated key literal `False`
+
+F601 Dictionary key literal `1 + 0j` repeated (`1 + 0j` hashes to the same value as `True`)
+  --> F601.py:77:15
+   |
+75 | x = {False: 1, -0: 2}
+76 | x = {-0: 1, False: 2}
+77 | x = {True: 1, 1 + 0j: 2}
+   |               ^^^^^^
+78 | x = {1 + 0j: 1, True: 2}
+   |
+help: Remove repeated key literal `1 + 0j`
+
+F601 Dictionary key literal `True` repeated (`True` hashes to the same value as `1 + 0j`)
+  --> F601.py:78:17
+   |
+76 | x = {-0: 1, False: 2}
+77 | x = {True: 1, 1 + 0j: 2}
+78 | x = {1 + 0j: 1, True: 2}
+   |                 ^^^^
+   |
+help: Remove repeated key literal `True`

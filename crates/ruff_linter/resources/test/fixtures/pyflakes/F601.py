@@ -70,3 +70,9 @@ x = {
 }
 
 x = {(f(), 2): 1, (f(), 2.0): 2}
+
+# Regression test for: https://github.com/astral-sh/ruff/pull/25982#pullrequestreview-4495269928
+x = {False: 1, -0: 2}
+x = {-0: 1, False: 2}
+x = {True: 1, 1 + 0j: 2}
+x = {1 + 0j: 1, True: 2}
