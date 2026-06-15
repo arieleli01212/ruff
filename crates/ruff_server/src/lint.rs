@@ -566,6 +566,11 @@ mod tests {
         let related_information = lsp_diagnostic
             .related_information
             .expect("client supports diagnostic related information");
+        assert!(
+            related_information
+                .iter()
+                .all(|information| information.location.uri == uri)
+        );
         assert_eq!(
             related_information
                 .iter()

@@ -27,7 +27,6 @@
 
 mod code_action;
 mod custom_extension;
-mod diagnostics;
 mod hover;
 mod notebook;
 mod workspace;
