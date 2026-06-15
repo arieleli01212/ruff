@@ -406,8 +406,14 @@ enum PatternValueSource {
     Extracted,
 }
 
+/// Controls when pattern analysis restores an original subject type after filtering its arms.
+///
+/// Class and mapping patterns use [`Self::EquivalentTypes`] because their successful subject type
+/// only filters the original type. Sequence and OR patterns can construct a more precise success
+/// type, so they use [`Self::TypeVariablesOnly`] to retain that precision while still preserving
+/// the identity of an original type variable.
 #[derive(Clone, Copy)]
-enum OriginalTypePreservation {
+enum OriginalSubjectPreservation {
     EquivalentTypes,
     TypeVariablesOnly,
 }
@@ -1489,7 +1495,7 @@ impl<'db> PatternSuccessAnalyzer<'db> {
     ) -> PatternSuccessResult<'db> {
         self.analyze_pattern_subject_arms(
             subject_ty,
-            OriginalTypePreservation::TypeVariablesOnly,
+            OriginalSubjectPreservation::TypeVariablesOnly,
             |analyzer, subject_ty| {
                 Some(analyzer.analyze_successful_or_pattern_arm(patterns, subject_ty))
             },
@@ -1683,7 +1689,7 @@ impl<'db> PatternSuccessAnalyzer<'db> {
         };
         self.analyze_pattern_subject_arms(
             subject_ty,
-            OriginalTypePreservation::EquivalentTypes,
+            OriginalSubjectPreservation::EquivalentTypes,
             |analyzer, subject_ty| {
                 let narrowed_subject_ty = analyzer.filter_class_pattern_subject_type(
                     context.class,
@@ -1820,7 +1826,7 @@ impl<'db> PatternSuccessAnalyzer<'db> {
             .collect();
         self.analyze_pattern_subject_arms(
             subject_ty,
-            OriginalTypePreservation::EquivalentTypes,
+            OriginalSubjectPreservation::EquivalentTypes,
             |analyzer, subject_ty| {
                 let narrowed_subject_ty =
                     analyzer.intersect_types(subject_ty, mapping_pattern_type(analyzer.db));
@@ -1901,7 +1907,7 @@ impl<'db> PatternSuccessAnalyzer<'db> {
         let sequence_ty = necessary_sequence_pattern_type(self.db, kind);
         self.analyze_pattern_subject_arms(
             subject_ty,
-            OriginalTypePreservation::TypeVariablesOnly,
+            OriginalSubjectPreservation::TypeVariablesOnly,
             |analyzer, subject_ty| {
                 let (narrowed_subject_ty, element_types) =
                     analyzer.sequence_pattern_arm(subject_ty, target_len, sequence_ty)?;
@@ -2015,7 +2021,7 @@ impl<'db> PatternSuccessAnalyzer<'db> {
     fn analyze_pattern_subject_arms(
         &self,
         subject_ty: Type<'db>,
-        preservation: OriginalTypePreservation,
+        preservation: OriginalSubjectPreservation,
         analyze_arm: impl Fn(&Self, Type<'db>) -> Option<PatternSuccessResult<'db>>,
     ) -> PatternSuccessResult<'db> {
         // Analyze the original subject to preserve type-variable identity in the result. The
@@ -2079,7 +2085,7 @@ impl<'db> PatternSuccessAnalyzer<'db> {
     fn analyze_pattern_subject_arms_impl(
         &self,
         subject_ty: Type<'db>,
-        preservation: OriginalTypePreservation,
+        preservation: OriginalSubjectPreservation,
         analyze_arm: &impl Fn(&Self, Type<'db>) -> Option<PatternSuccessResult<'db>>,
     ) -> PatternSuccessResult<'db> {
         let subject_arms = self.match_pattern_subject_arms(subject_ty);
@@ -2161,13 +2167,13 @@ impl<'db> PatternSuccessAnalyzer<'db> {
         &self,
         original_subject_ty: Type<'db>,
         matched_types: Type<'db>,
-        preservation: OriginalTypePreservation,
+        preservation: OriginalSubjectPreservation,
     ) -> Type<'db> {
         let filtering_types = original_subject_ty
             .flatten_typevars(self.db)
             .resolve_type_alias(self.db);
         if matched_types.is_equivalent_to(self.db, filtering_types)
-            && (matches!(preservation, OriginalTypePreservation::EquivalentTypes)
+            && (matches!(preservation, OriginalSubjectPreservation::EquivalentTypes)
                 || original_subject_ty.has_typevar(self.db))
         {
             original_subject_ty
